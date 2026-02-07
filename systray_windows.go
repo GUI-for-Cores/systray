@@ -76,6 +76,9 @@ var (
 	pTranslateMessage      = u32.NewProc("TranslateMessage")
 	pUnregisterClass       = u32.NewProc("UnregisterClassW")
 	pUpdateWindow          = u32.NewProc("UpdateWindow")
+	pDestroyMenu           = u32.NewProc("DestroyMenu")
+	pDestroyIcon           = u32.NewProc("DestroyIcon")
+	pDeleteObject          = g32.NewProc("DeleteObject")
 
 	// ErrTrayNotReadyYet is returned by functions when they are called before the tray has been initialized.
 	ErrTrayNotReadyYet = errors.New("tray not ready yet")
@@ -1109,5 +1112,44 @@ func showMenuItem(item *MenuItem) {
 }
 
 func resetMenu() {
+	// destroy existing menus
+	wt.muMenus.Lock()
+	for id, h := range wt.menus {
+		if h != 0 {
+			pDestroyMenu.Call(uintptr(h))
+		}
+		delete(wt.menus, id)
+	}
+	wt.muMenus.Unlock()
+
+	// destroy menu item bitmaps (HBITMAP)
+	wt.muMenuItemIcons.Lock()
+	for _, h := range wt.menuItemIcons {
+		if h != 0 {
+			pDeleteObject.Call(uintptr(h))
+		}
+	}
+	wt.menuItemIcons = make(map[uint32]Handle)
+	wt.muMenuItemIcons.Unlock()
+
+	// destroy loaded images (HICON from LoadImage)
+	wt.muLoadedImages.Lock()
+	for _, h := range wt.loadedImages {
+		if h != 0 {
+			pDestroyIcon.Call(uintptr(h))
+		}
+	}
+	wt.loadedImages = make(map[string]Handle)
+	wt.muLoadedImages.Unlock()
+
+	// clear menuOf and visible items
+	wt.muMenuOf.Lock()
+	wt.menuOf = make(map[uint32]Handle)
+	wt.muMenuOf.Unlock()
+
+	wt.muVisibleItems.Lock()
+	wt.visibleItems = make(map[uint32][]uint32)
+	wt.muVisibleItems.Unlock()
+
 	wt.createMenu()
 }
