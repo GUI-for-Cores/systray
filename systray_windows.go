@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -936,6 +937,8 @@ func nativeEnd() {
 
 func nativeStart() {
 	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 		for doNativeTick() {
 		}
 	}()
