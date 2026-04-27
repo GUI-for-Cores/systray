@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var (
@@ -26,6 +27,75 @@ func init() {
 
 type IMenu interface {
 	ShowMenu() error
+}
+
+func getDefaultDoubleClickInterval() int64 {
+	if interval := getSystemDoubleClickInterval(); interval >= 0 {
+		return interval
+	}
+	return 500
+}
+
+type clickCoordinator struct {
+	mu                 sync.Mutex
+	timer              *time.Timer
+	suppressNextSingle bool
+}
+
+func (c *clickCoordinator) triggerClick(single, double func()) {
+	if double == nil || dClickTimeMinInterval <= 0 {
+		if single != nil {
+			single()
+		}
+		return
+	}
+
+	c.mu.Lock()
+	if c.suppressNextSingle {
+		c.suppressNextSingle = false
+		c.mu.Unlock()
+		return
+	}
+	if c.timer != nil {
+		timer := c.timer
+		c.timer = nil
+		c.mu.Unlock()
+		timer.Stop()
+		double()
+		return
+	}
+
+	delay := time.Duration(dClickTimeMinInterval) * time.Millisecond
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		c.mu.Lock()
+		if c.timer == timer {
+			c.timer = nil
+		}
+		c.mu.Unlock()
+		if single != nil {
+			single()
+		}
+	})
+	c.timer = timer
+	c.mu.Unlock()
+}
+
+func (c *clickCoordinator) triggerDouble(double func()) {
+	if double == nil || dClickTimeMinInterval <= 0 {
+		return
+	}
+
+	c.mu.Lock()
+	timer := c.timer
+	c.timer = nil
+	c.suppressNextSingle = true
+	c.mu.Unlock()
+
+	if timer != nil {
+		timer.Stop()
+	}
+	double()
 }
 
 // MenuItem is used to keep track each menu item of systray.
@@ -86,26 +156,37 @@ func Run(onReady, onExit func()) {
 	nativeLoop()
 }
 
-//设置鼠标左键双击事件的时间间隔 默认500毫秒
+// 设置鼠标左键双击事件的时间间隔。
+// 小于0时恢复默认值；等于0时禁用双击识别；大于0时使用传入值。
+// 默认值优先使用系统双击时间，无法获取时回退到500毫秒。
 func SetDClickTimeMinInterval(value int64) {
+	if value < 0 {
+		dClickTimeMinInterval = getDefaultDoubleClickInterval()
+		return
+	}
 	dClickTimeMinInterval = value
 }
 
-//设置托盘鼠标左键点击事件
+// 设置托盘鼠标左键点击事件
 func SetOnClick(fn func(menu IMenu)) {
 	setOnClick(fn)
 }
 
-//设置托盘鼠标左键双击事件
+// 设置托盘鼠标左键双击事件
 func SetOnDClick(fn func(menu IMenu)) {
 	setOnDClick(fn)
 }
 
-//设置托盘鼠标右键事件反馈回调
-//支持windows 和 macosx，不支持linux
-//设置事件，菜单默认将不展示，通过menu.ShowMenu()函数显示
-//未设置事件，默认右键显示托盘菜单
-//macosx ShowMenu()只支持OnRClick函数内调用
+// 设置托盘鼠标中键点击事件
+func SetOnMClick(fn func(menu IMenu)) {
+	setOnMClick(fn)
+}
+
+// 设置托盘鼠标右键事件反馈回调
+// 支持windows 和 macosx，不支持linux
+// 设置事件，菜单默认将不展示，通过menu.ShowMenu()函数显示
+// 未设置事件，默认右键显示托盘菜单
+// macosx ShowMenu()只支持OnRClick函数内调用
 func SetOnRClick(fn func(menu IMenu)) {
 	setOnRClick(fn)
 }
@@ -130,7 +211,7 @@ func Register(onReady func(), onExit func()) {
 	if onReady == nil {
 		systrayReady = nil
 	} else {
-		var readyCh = make(chan interface{})
+		readyCh := make(chan struct{})
 		// Run onReady on separate goroutine to avoid blocking event loop
 		go func() {
 			<-readyCh

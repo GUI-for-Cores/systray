@@ -9,7 +9,7 @@ removing the GTK dependency and support for legacy linux system tray.
 * Supported on Windows, macOS, Linux and many BSD systems
 * Menu items can be checked and/or disabled
 * Methods may be called from any Goroutine
-* tray icon supports mouse click, double click, and right click
+* tray icon supports mouse click, double click, middle click, and right click
 
 ## API
 
@@ -32,6 +32,9 @@ func onReady() {
 	})
 	systray.SetOnDClick(func() {
 		fmt.Println("SetOnDClick")
+	})
+	systray.SetOnMClick(func(menu systray.IMenu) {
+		fmt.Println("SetOnMClick")
 	})
 	systray.SetOnRClick(func(menu systray.IMenu) {
 		menu.ShowMenu()

@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/energye/systray"
-	"github.com/energye/systray/icon"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/energye/systray"
+	"github.com/energye/systray/icon"
 )
 
 func main() {
@@ -47,19 +47,25 @@ func onReady() {
 	systray.SetTooltip("Energy tooltip")
 	systray.SetOnClick(func(menu systray.IMenu) {
 		if menu != nil { // menu for linux nil
-			menu.ShowMenu()
+			// menu.ShowMenu()
 		}
 		fmt.Println("SetOnClick")
 	})
 	systray.SetOnDClick(func(menu systray.IMenu) {
 		if menu != nil { // menu for linux nil
-			menu.ShowMenu()
+			// menu.ShowMenu()
 		}
 		fmt.Println("SetOnDClick")
 	})
+	systray.SetOnMClick(func(menu systray.IMenu) {
+		if menu != nil { // menu for linux nil
+			// menu.ShowMenu()
+		}
+		fmt.Println("SetOnMClick")
+	})
 	// OnRClick linux not impl
 	systray.SetOnRClick(func(menu systray.IMenu) {
-		menu.ShowMenu()
+		// menu.ShowMenu()
 		fmt.Println("SetOnRClick")
 	})
 	systray.CreateMenu()
@@ -140,9 +146,9 @@ func onReady() {
 		if runtime.GOOS == "windows" {
 			ext = ".ico" // windows .ico
 		}
-		icoData, _ := ioutil.ReadFile(filepath.Join(wd, "icon"+ext))
-		logoData, _ := ioutil.ReadFile(filepath.Join(wd, "logo"+ext))
-		for true {
+		icoData, _ := os.ReadFile(filepath.Join(wd, "icon"+ext))
+		logoData, _ := os.ReadFile(filepath.Join(wd, "logo"+ext))
+		for {
 			time.Sleep(time.Second * 1)
 			b = !b
 			if b {

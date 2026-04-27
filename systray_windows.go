@@ -7,7 +7,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -58,6 +57,7 @@ var (
 	pDrawIconEx            = u32.NewProc("DrawIconEx")
 	pGetCursorPos          = u32.NewProc("GetCursorPos")
 	pGetDC                 = u32.NewProc("GetDC")
+	pGetDoubleClickTime    = u32.NewProc("GetDoubleClickTime")
 	pGetMessage            = u32.NewProc("GetMessageW")
 	pGetSystemMetrics      = u32.NewProc("GetSystemMetrics")
 	pInsertMenuItem        = u32.NewProc("InsertMenuItemW")
@@ -251,8 +251,10 @@ type winTray struct {
 
 	initialized *atomic.Bool
 
+	clicks   clickCoordinator
 	onClick  func(menu IMenu)
 	onDClick func(menu IMenu)
+	onMClick func(menu IMenu)
 	onRClick func(menu IMenu)
 }
 
@@ -310,12 +312,28 @@ var wt = winTray{
 	initialized: &atomic.Bool{},
 }
 
+func init() {
+	dClickTimeMinInterval = getDefaultDoubleClickInterval()
+}
+
+func getSystemDoubleClickInterval() int64 {
+	res, _, _ := pGetDoubleClickTime.Call()
+	if res == 0 {
+		return -1
+	}
+	return int64(res)
+}
+
 func (t *winTray) setOnClick(fn func(menu IMenu)) {
 	t.onClick = fn
 }
 
 func (t *winTray) setOnDClick(fn func(menu IMenu)) {
 	t.onDClick = fn
+}
+
+func (t *winTray) setOnMClick(fn func(menu IMenu)) {
+	t.onMClick = fn
 }
 
 func (t *winTray) setOnRClick(fn func(menu IMenu)) {
@@ -329,6 +347,7 @@ func (t *winTray) wndProc(hWnd Handle, message uint32, wParam, lParam uintptr) (
 		WM_RBUTTONUP     = 0x0205
 		WM_LBUTTONUP     = 0x0202
 		WM_LBUTTONDBLCLK = 0x0203
+		WM_MBUTTONUP     = 0x0208
 		WM_COMMAND       = 0x0111
 		WM_ENDSESSION    = 0x0016
 		WM_CLOSE         = 0x0010
@@ -364,12 +383,28 @@ func (t *winTray) wndProc(hWnd Handle, message uint32, wParam, lParam uintptr) (
 				t.ShowMenu()
 			}
 		case WM_LBUTTONUP:
+			var onClick func()
 			if t.onClick != nil {
-				t.onClick(t)
+				onClick = func() {
+					t.onClick(t)
+				}
 			}
+			var onDClick func()
+			if t.onDClick != nil {
+				onDClick = func() {
+					t.onDClick(t)
+				}
+			}
+			t.clicks.triggerClick(onClick, onDClick)
 		case WM_LBUTTONDBLCLK:
 			if t.onDClick != nil {
-				t.onDClick(t)
+				t.clicks.triggerDouble(func() {
+					t.onDClick(t)
+				})
+			}
+		case WM_MBUTTONUP:
+			if t.onMClick != nil {
+				t.onMClick(t)
 			}
 		}
 	case t.wmTaskbarCreated: // on explorer.exe restarts
@@ -984,7 +1019,7 @@ func iconBytesToFilePath(iconBytes []byte) (string, error) {
 	iconFilePath := filepath.Join(os.TempDir(), "systray_temp_icon_"+dataHash)
 
 	if _, err := os.Stat(iconFilePath); os.IsNotExist(err) {
-		if err := ioutil.WriteFile(iconFilePath, iconBytes, 0644); err != nil {
+		if err := os.WriteFile(iconFilePath, iconBytes, 0644); err != nil {
 			return "", err
 		}
 	}
@@ -1080,6 +1115,10 @@ func setOnClick(fn func(menu IMenu)) {
 
 func setOnDClick(fn func(menu IMenu)) {
 	wt.setOnDClick(fn)
+}
+
+func setOnMClick(fn func(menu IMenu)) {
+	wt.setOnMClick(fn)
 }
 
 func setOnRClick(fn func(menu IMenu)) {

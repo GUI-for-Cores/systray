@@ -8,15 +8,26 @@ package systray
 #include "systray.h"
 
 void setInternalLoop(bool);
+double systemDoubleClickInterval(void);
 */
 import "C"
 
 import (
-	"time"
 	"unsafe"
 )
 
 var st = &systray{}
+
+func init() {
+	dClickTimeMinInterval = getDefaultDoubleClickInterval()
+}
+
+func getSystemDoubleClickInterval() int64 {
+	if interval := int64(C.systemDoubleClickInterval() * 1000); interval > 0 {
+		return interval
+	}
+	return -1
+}
 
 type systray struct {
 }
@@ -76,10 +87,11 @@ func setInternalLoop(internal bool) {
 }
 
 var (
+	trayClicks      clickCoordinator
 	onClick         func(menu IMenu)
 	onDClick        func(menu IMenu)
+	onMClick        func(menu IMenu)
 	onRClick        func(menu IMenu)
-	dClickTime      int64
 	isEnableOnClick = false
 )
 
@@ -91,6 +103,11 @@ func setOnClick(fn func(menu IMenu)) {
 func setOnDClick(fn func(menu IMenu)) {
 	enableOnClick()
 	onDClick = fn
+}
+
+func setOnMClick(fn func(menu IMenu)) {
+	enableOnClick()
+	onMClick = fn
 }
 
 func setOnRClick(fn func(menu IMenu)) {
@@ -215,22 +232,25 @@ func systray_menu_item_selected(cID C.int) {
 
 //export systray_on_click
 func systray_on_click() {
-	if dClickTime == 0 {
-		dClickTime = time.Now().UnixMilli()
-	} else {
-		nowMilli := time.Now().UnixMilli()
-		if nowMilli-dClickTime < dClickTimeMinInterval {
-			dClickTime = dClickTimeMinInterval
-			if onDClick != nil {
-				onDClick(st)
-				return
-			}
-		} else {
-			dClickTime = nowMilli
+	var click func()
+	if onClick != nil {
+		click = func() {
+			onClick(st)
 		}
 	}
-	if onClick != nil {
-		onClick(st)
+	var dClick func()
+	if onDClick != nil {
+		dClick = func() {
+			onDClick(st)
+		}
+	}
+	trayClicks.triggerClick(click, dClick)
+}
+
+//export systray_on_mclick
+func systray_on_mclick() {
+	if onMClick != nil {
+		onMClick(st)
 	}
 }
 

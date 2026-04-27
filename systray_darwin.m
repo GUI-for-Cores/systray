@@ -227,6 +227,8 @@ NSMenuItem *find_menu_item(NSMenu *ourMenu, NSNumber *menuId) {
     NSEvent *event = [NSApp currentEvent];
     if(event.type == NSEventTypeLeftMouseUp){
         systray_on_click();
+    }else if(event.type == NSEventTypeOtherMouseUp && event.buttonNumber == 2){
+        systray_on_mclick();
     }else if(event.type == NSEventTypeRightMouseUp){
         systray_on_rclick();
     }
@@ -240,13 +242,17 @@ NSMenuItem *find_menu_item(NSMenu *ourMenu, NSNumber *menuId) {
 
 - (void) enable_on_click {
   [statusItem.button setAction:@selector(statusOnClick:)];
-  [statusItem.button sendActionOn:(NSEventMaskLeftMouseUp|NSEventMaskRightMouseUp)];
+  [statusItem.button sendActionOn:(NSEventMaskLeftMouseUp|NSEventMaskRightMouseUp|NSEventMaskOtherMouseUp)];
 }
 
 @end
 
 bool internalLoop = false;
 SystrayAppDelegate *owner;
+
+double systemDoubleClickInterval(void) {
+    return [NSEvent doubleClickInterval];
+}
 
 void setInternalLoop(bool i) {
 	internalLoop = i;

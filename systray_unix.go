@@ -15,7 +15,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/godbus/dbus/v5/introspect"
 	"github.com/godbus/dbus/v5/prop"
@@ -36,7 +35,17 @@ var (
 
 	// instance is the current instance of our DBus tray server
 	instance = &tray{menu: &menuLayout{}, menuVersion: 1}
+
+	trayClicks clickCoordinator
 )
+
+func init() {
+	dClickTimeMinInterval = getDefaultDoubleClickInterval()
+}
+
+func getSystemDoubleClickInterval() int64 {
+	return -1
+}
 
 // SetTemplateIcon sets the systray icon as a template icon (on macOS), falling back
 // to a regular icon on other platforms.
@@ -167,7 +176,6 @@ type UnimplementedStatusNotifierItem struct {
 	dActivate         func(x int32, y int32)
 	secondaryActivate func(x int32, y int32)
 	scroll            func(delta int32, orientation string)
-	dActivateTime     int64
 }
 
 func (*UnimplementedStatusNotifierItem) iface() string {
@@ -184,26 +192,24 @@ func (m *UnimplementedStatusNotifierItem) ContextMenu(x int32, y int32) (err *db
 }
 
 func (m *UnimplementedStatusNotifierItem) Activate(x int32, y int32) (err *dbus.Error) {
-	if m.dActivateTime == 0 {
-		m.dActivateTime = time.Now().UnixMilli()
-	} else {
-		nowMilli := time.Now().UnixMilli()
-		if nowMilli-m.dActivateTime < dClickTimeMinInterval {
-			m.dActivateTime = dClickTimeMinInterval
-			if m.dActivate != nil {
-				m.dActivate(x, y)
-				return
-			}
-		} else {
-			m.dActivateTime = nowMilli
-		}
+	if m.activate == nil && m.dActivate == nil {
+		err = &dbus.ErrMsgUnknownMethod
+		return
 	}
 
+	var activate func()
 	if m.activate != nil {
-		m.activate(x, y)
-	} else {
-		err = &dbus.ErrMsgUnknownMethod
+		activate = func() {
+			m.activate(x, y)
+		}
 	}
+	var dActivate func()
+	if m.dActivate != nil {
+		dActivate = func() {
+			m.dActivate(x, y)
+		}
+	}
+	trayClicks.triggerClick(activate, dActivate)
 	return
 }
 
@@ -233,6 +239,12 @@ func setOnClick(fn func(menu IMenu)) {
 
 func setOnDClick(fn func(menu IMenu)) {
 	usni.dActivate = func(x int32, y int32) {
+		fn(nil)
+	}
+}
+
+func setOnMClick(fn func(menu IMenu)) {
+	usni.secondaryActivate = func(x int32, y int32) {
 		fn(nil)
 	}
 }
